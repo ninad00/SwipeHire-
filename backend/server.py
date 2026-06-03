@@ -17,6 +17,10 @@ from typing import Any, Dict, List
 import firebase_admin
 from firebase_admin import credentials, firestore, auth
 from google.api_core.exceptions import ResourceExhausted
+from bandit import apply_feedback, rerank_jobs, rerank_jobs,build_features
+from use_encoder import cross_encoder_rerank, cross_encoder_rerank, cross_encoder_rerank, load_cross_encoder
+
+
 
 # Load environment variables
 load_dotenv()
@@ -24,7 +28,7 @@ load_dotenv()
 
 # Tesseract and Poppler paths
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-POPPLER_PATH = r"D:\Release-25.12.0-0\poppler-25.12.0\Library\bin"
+POPPLER_PATH = r"C:\poppler\Release-25.12.0-0\poppler-25.12.0\Library\bin"
 SYSTEM_PROMPT_PATH = os.path.join(os.path.dirname(__file__),  "system_prompt.txt")
 
 app = FastAPI(title="Resume Parser & Job Recommendation API")
@@ -53,6 +57,13 @@ class RankedJob(BaseModel):
     apply_link: str
     description_snippet: str
     score: float
+
+cross_model, cross_tokenizer, cross_device = (
+        load_cross_encoder(
+            "best_model.pt",
+            "lora_adapter"
+        )
+    )
 
 def get_current_user(authorization: str = Header(...)):
     if not authorization.startswith("Bearer "):
@@ -126,7 +137,7 @@ def create_embedding(text: str) -> np.ndarray:
     
     try:
         response = client.models.embed_content(
-            model="text-embedding-004",
+            model="gemini-embedding-001",
             contents=text
         )
         return np.array(response.embeddings[0].values).reshape(1, -1)
@@ -156,16 +167,16 @@ def load_job_database() -> List[dict]:
 def rank_jobs_by_similarity(
     job_dict: dict,
     database: List[dict],
-    top_k: int = 50,
-    ) -> List[dict]:
+    top_k: int = 50):
+
     """Rank jobs by cosine similarity to user's job_dict."""
     job_text = json.dumps(job_dict, sort_keys=True)
     query_embedding = create_embedding(job_text)
-
+    
     results = []
 
     for item in database:
-        embedding = item.get("embedding")
+        embedding = item.get("emb_new")
         if not embedding:
             continue  # skip jobs without embeddings
 
@@ -191,7 +202,53 @@ def rank_jobs_by_similarity(
     print(f"Top job match score: {results[0]['score'] if results else 'N/A'}")
     print(f"Top company name: {results[0]['company'] if results else 'N/A'}")
 
-    return results[:top_k]
+    return results[:top_k], query_embedding.flatten()   
+
+
+# def cross_encoder_rerank(
+#     job_dict,
+#     candidate_jobs,
+#     cross_encoder,
+#     top_k=20
+# ):
+
+#     resume_text = json.dumps(
+#         job_dict,
+#         sort_keys=True
+#     )
+
+#     pairs = []
+
+#     for job in candidate_jobs:
+
+#         job_text = (
+#             f"{job.get('title','')} "
+#             f"{job.get('description','')}"
+#         )
+
+#         pairs.append(
+#             (
+#                 resume_text,
+#                 job_text
+#             )
+#         )
+
+#     scores = cross_encoder.predict(
+#         pairs
+#     )
+
+#     for job, score in zip(
+#         candidate_jobs,
+#         scores
+#     ):
+#         job["cross"] = float(score)
+
+#     candidate_jobs.sort(
+#         key=lambda x: x["cross"],
+#         reverse=True
+#     )
+
+#     return candidate_jobs[:top_k]
 
 
 def compute_and_store_ranking(uid):
@@ -213,7 +270,7 @@ def compute_and_store_ranking(uid):
         print(f"Loaded {len(database)} jobs from database.")
         
         # Rank jobs and get objects with IDs and scores
-        ranked_jobs = rank_jobs_by_similarity(job_dict, database, top_k=3000)
+        ranked_jobs = rank_jobs_by_similarity(job_dict, database, top_k=3810)
         print(f"Ranking complete. Top score: {ranked_jobs[0]['score'] if ranked_jobs else 'N/A'}")
 
         # De-duplicate by title: Keep only the first occurrence of each title
@@ -231,7 +288,8 @@ def compute_and_store_ranking(uid):
         ranked_jobs_data = [{"id": job["id"], "score": job["score"]} for job in unique_ranked_jobs]
 
         db.collection("users").document(uid).update({
-            "ranked_jobs": ranked_jobs_data, # Store full objects
+            "ranked_jobs": ranked_jobs_data,
+             # Store full objects
             "ranking_updated_at": firestore.SERVER_TIMESTAMP
         })
         print(f"Successfully updated ranked_jobs for {uid}")
@@ -242,6 +300,363 @@ def compute_and_store_ranking(uid):
         import traceback
         traceback.print_exc()
 
+# def full_enc_pipeline(uid):
+#     try:
+#         print(f"Starting ranking for user {uid}...")
+#         user_doc = db.collection("users").document(uid).get()
+#         if not user_doc.exists:
+#             print(f"User {uid} not found for ranking.")
+#             return
+
+#         user_data = user_doc.to_dict()
+#         job_dict = user_data.get("job_dict")
+        
+#         if not job_dict:
+#             print(f"No job_dict found for user {uid}. Skipping ranking.")
+#             return
+
+#         database = load_job_database()
+#         print(f"Loaded {len(database)} jobs from database.")
+        
+#         # Rank jobs and get objects with IDs and scores
+#         ranked_jobs = rank_jobs_by_similarity(job_dict, database, top_k=3810)
+#         print(f"Ranking complete. Top score: {ranked_jobs[0]['score'] if ranked_jobs else 'N/A'}")
+
+#         # De-duplicate by title: Keep only the first occurrence of each title
+#         seen_titles = set()
+#         unique_ranked_jobs = []
+#         for job in ranked_jobs:
+#             title = job.get("title", "").strip().lower()
+#             if title and title not in seen_titles:
+#                 seen_titles.add(title)
+#                 unique_ranked_jobs.append(job)
+        
+#         # cosine -> top100
+
+#         top100 = ranked_jobs[:80]
+
+#         cross_model, cross_tokenizer, cross_device = (
+#     load_cross_encoder(
+#         "best_model.pt",
+#         "lora_adapter"
+#     )
+# )
+#     # cross encoder -> top20
+        
+#         top20 = cross_encoder_rerank(
+#             job_dict,
+#             top100,
+#             cross_model,
+#             cross_tokenizer,
+#             cross_device,
+#             top_k=20
+#         )
+
+#         db.collection("users").document(uid).update({
+#             "ranked_jobs": ranked_jobs_data, # Store full objects
+#             "ranking_updated_at": firestore.SERVER_TIMESTAMP
+#         })
+
+
+
+#         # linucb rerank
+
+#         resume_embedding = user_data[
+#             "resume_embedding"
+#         ]
+
+#         final_jobs = rerank_jobs(
+#             db=db,
+#             uid=uid,
+#             jobs=top20,
+#             resume_embedding=resume_embedding
+#         )
+
+#         ranked_jobs_data = []
+
+#         for item in final_jobs:
+
+#             ranked_jobs_data.append(
+#                 {
+#                     "id": item["id"],
+
+#                     # LinUCB score
+#                     "score": item["score"],
+
+#                     # needed later for feedback
+#                     "features": item["features"]
+#                 }
+#             )
+
+#         db.collection(
+#             "users"
+#         ).document(
+#             uid
+#         ).update(
+#             {
+#                 "ranked_jobs":
+#                     ranked_jobs_data,
+
+#                 "count": 0,
+
+#                 "ranking_updated_at":
+#                     firestore.SERVER_TIMESTAMP
+#             }
+#         )
+
+#         print(
+#             f"Stored {len(ranked_jobs_data)} jobs"
+#         )
+
+
+#     except Exception as e:
+#         print(f"Error in compute_and_store_ranking: {str(e)}")
+#         import traceback
+#         traceback.print_exc()
+
+def build_candidate_pool(uid):
+
+    user_doc = (
+        db.collection("users")
+        .document(uid)
+        .get()
+    )
+
+    user_data = user_doc.to_dict()
+
+    job_dict = user_data["job_dict"]
+
+    database = load_job_database()
+
+    # cosine retrieval
+    
+
+    cosine_jobs, resume_embedding = rank_jobs_by_similarity(
+        job_dict,
+        database,
+        top_k=3000
+    )
+    print(resume_embedding.shape)
+    # dedupe
+
+    seen = set()
+    unique_jobs = []
+
+    for job in cosine_jobs:
+
+        title = (
+            job.get("title", "")
+            .strip()
+            .lower()
+        )
+
+        if title in seen:
+            continue
+
+        seen.add(title)
+        unique_jobs.append(job)
+
+    # load once globally ideally
+    
+
+    # rerank
+
+    top500 = cross_encoder_rerank(
+        job_dict,
+        unique_jobs[:80],
+        cross_model,
+        cross_tokenizer,
+        cross_device,
+        top_k=80
+    )
+
+    candidate_pool = []
+
+    for job in top500:
+
+        # job_doc = (
+        #     db.collection("resumes")
+        #     .document(job["id"])
+        #     .get()
+        # )
+
+        # job_emb = job_doc.to_dict()["emb_new"]
+
+        candidate_pool.append(
+            {
+                "id": job["id"],
+                "cross": job["cross"],
+                "cosine": job["score"],
+            }
+        )
+
+    db.collection("users") \
+      .document(uid) \
+      .update({
+            "candidate_jobs":
+                candidate_pool,
+
+            "count": 0,
+            "resume_embedding":resume_embedding.tolist(),
+            "seen_jobs": [], # reset seen jobs
+
+            "candidate_updated_at":
+                firestore.SERVER_TIMESTAMP
+      })
+    
+def rerank_for_login(uid):
+
+    user_doc = (
+        db.collection("users")
+        .document(uid)
+        .get()
+    )
+
+    user_data = user_doc.to_dict()
+
+    candidate_jobs = (
+        user_data.get(
+            "candidate_jobs",
+            []
+        )
+    )
+
+    resume_embedding = (
+        user_data[
+            "resume_embedding"
+        ]
+    )
+
+    jobs = []
+
+    for item in candidate_jobs:
+
+        job_doc = (
+            db.collection("resumes")
+            .document(item["id"])
+            .get()
+        )
+
+        job_embedding = (
+            job_doc.to_dict()["emb_new"]
+        )
+
+        jobs.append(
+            {
+                "id": item["id"],
+                "embedding": job_embedding,
+                "cosine": item["cosine"],
+                "cross": item["cross"]
+            }
+        )
+
+    final_jobs = rerank_jobs(
+        db=db,
+        uid=uid,
+        jobs=jobs,
+        resume_embedding=
+            resume_embedding
+    )
+
+    ranked_jobs = []
+
+    for item in final_jobs:
+
+        ranked_jobs.append(
+            {
+                "id":
+                    item["id"],
+
+                "score":
+                    item["score"],
+
+                
+            }
+        )
+
+    current_count = user_data.get("count", 0)
+
+    db.collection("users") \
+      .document(uid) \
+      .update({
+            "ranked_jobs":
+                ranked_jobs,
+
+            "count": current_count,
+
+            "ranking_updated_at":
+                firestore.SERVER_TIMESTAMP
+      })
+
+# def get_features(uid, job_id):
+
+#     user_doc = (
+#         db.collection("users")
+#         .document(uid)
+#         .get()
+#     )
+
+#     ranked_jobs = (
+#         user_doc.to_dict()
+#         .get("ranked_jobs", [])
+#     )
+
+#     for job in ranked_jobs:
+
+#         if job["id"] == job_id:
+#             return job["features"]
+
+#     return None
+
+def get_job_context(
+    uid,
+    job_id
+):
+
+    user_doc = (
+        db.collection("users")
+        .document(uid)
+        .get()
+    )
+
+    user_data = user_doc.to_dict()
+
+    resume_embedding = (
+        user_data["resume_embedding"]
+    )
+
+    candidate_jobs = (
+        user_data["candidate_jobs"]
+    )
+
+    for job in candidate_jobs:
+
+        if job["id"] == job_id:
+            job_doc = (
+                db.collection("resumes")
+                .document(job_id)
+                .get()
+            )
+
+            job_embedding = (
+                job_doc.to_dict()["emb_new"]
+            )
+
+            return {
+                "resume_embedding":
+                    resume_embedding,
+
+                "job_embedding":
+                    job_embedding,
+
+                "cross":
+                    job["cross"],
+
+                "cosine":
+                    job["cosine"]
+            }
+
+    return None
 
 @app.get("/save-profile")
 async def save_profile(user: dict = Depends(get_current_user)):
@@ -256,17 +671,26 @@ async def save_profile(user: dict = Depends(get_current_user)):
             print(f"User document not found for uid: {user['uid']}")
             raise HTTPException(status_code=404, detail="User data not found")
             
+        rerank_for_login(user["uid"])
+
+        user_doc = db.collection("users").document(user["uid"]).get()
         user_data = user_doc.to_dict()
-        count = user_data.get("count", 0)
-        # Fetch ranked_jobs list which contains {id, score}
+
         ranked_jobs_data = user_data.get("ranked_jobs", [])
-        
-        print(f"DEBUG: User {user['uid']} - Count: {count}, Total Ranked Jobs: {len(ranked_jobs_data)}")
+        seen_jobs = set(
+        user_data.get(
+            "seen_jobs",
+            []
+        )
+    )
 
+        unseen_jobs = [
+            job
+            for job in ranked_jobs_data
+            if job["id"] not in seen_jobs
+        ]
 
-        # Fetch batch
-        current_batch = ranked_jobs_data[count : count + 5]
-        print(f"DEBUG: Fetching jobs indices {count} to {count+5}. items: {current_batch}")
+        current_batch = unseen_jobs[:5]
 
         jobs_to_send_details = []
         for item in current_batch:
@@ -286,11 +710,21 @@ async def save_profile(user: dict = Depends(get_current_user)):
  
         print(f"DEBUG: Successfully fetched {len(jobs_to_send_details)} job details.")
 
-        # Update count so WS starts from the next batch
         if jobs_to_send_details:
-             db.collection("users").document(user["uid"]).update({
-                "count": count + len(jobs_to_send_details)
-             })
+
+            shown_ids = [
+                job["id"]
+                for job in jobs_to_send_details
+            ]
+
+            db.collection("users") \
+            .document(user["uid"]) \
+            .update({
+                    "seen_jobs":
+                        firestore.ArrayUnion(
+                            shown_ids
+                        )
+            })
              
         return {
             "success": True,
@@ -307,6 +741,7 @@ async def jobs_ws(ws: WebSocket):
 
     try:
         token = ws.query_params.get("token")
+
         if not token:
             await ws.close(code=1008)
             return
@@ -314,39 +749,121 @@ async def jobs_ws(ws: WebSocket):
         decoded = auth.verify_id_token(token)
         uid = decoded["uid"]
 
-        # 2. Load user state (example)
-        user_ref = db.collection("users").document(uid)
-        user = user_ref.get().to_dict()
-
-        ranked_jobs_data = user.get("ranked_jobs", []) # List of {id, score}
-        count = user.get("count", 0)
+        user_ref = (
+            db.collection("users")
+            .document(uid)
+        )
 
         while True:
-            data = json.loads(await ws.receive_text())
 
-            if data["type"] == "NEXT_JOB":
-                if count >= len(ranked_jobs_data):
-                    await ws.send_json({ "type": "END" })
+            data = json.loads(
+                await ws.receive_text()
+            )
+
+            if data["type"] != "NEXT_JOB":
+                continue
+
+            user = (
+                user_ref.get()
+                .to_dict()
+            )
+
+            ranked_jobs_data = (
+                user.get(
+                    "ranked_jobs",
+                    []
+                )
+            )
+
+            seen_jobs = set(
+                user.get(
+                    "seen_jobs",
+                    []
+                )
+            )
+
+            unseen_jobs = [
+                job
+                for job in ranked_jobs_data
+                if job["id"] not in seen_jobs
+            ]
+
+            if not unseen_jobs:
+
+                rerank_for_login(uid)
+
+                user = user_ref.get().to_dict()
+
+                ranked_jobs_data = user.get(
+                    "ranked_jobs",
+                    []
+                )
+
+                seen_jobs = set(
+                    user.get(
+                        "seen_jobs",
+                        []
+                    )
+                )
+
+                unseen_jobs = [
+                    job
+                    for job in ranked_jobs_data
+                    if job["id"] not in seen_jobs
+                ]
+
+                if not unseen_jobs:
+                    await ws.send_json({"type": "END"})
                     continue
 
-                item = ranked_jobs_data[count]
-                job_id = item["id"]
-                score = item["score"]
-                count += 1
+            item = unseen_jobs[0]
 
-                doc = db.collection("resumes").document(job_id).get()
-                if doc.exists:
-                    job_data = doc.to_dict()
-                    job_data = {key: job_data.get(key, "") for key in ["apply_options", "company_name", "description", "detected_extensions", "extensions", "job_highlights", "location", "title"]}
-                    job_data["id"] = job_id
-                    job_data["score"] = score # Send real score
-                    
-                    await ws.send_json({
-                        "type": "JOB",
-                        "job": job_data
-                    })
+            job_id = item["id"]
+            score = item["score"]
 
-                user_ref.update({"count": count})
+            doc = (
+                db.collection("resumes")
+                .document(job_id)
+                .get()
+            )
+
+            if not doc.exists:
+                continue
+
+            job_data = doc.to_dict()
+
+            job_data = {
+                key: job_data.get(key, "")
+                for key in [
+                    "apply_options",
+                    "company_name",
+                    "description",
+                    "detected_extensions",
+                    "extensions",
+                    "job_highlights",
+                    "location",
+                    "title",
+                ]
+            }
+
+            job_data["id"] = job_id
+            job_data["score"] = score
+
+            await ws.send_json(
+                {
+                    "type": "JOB",
+                    "job": job_data
+                }
+            )
+
+            user_ref.update(
+                {
+                    "seen_jobs":
+                        firestore.ArrayUnion(
+                            [job_id]
+                        )
+                }
+            )
 
     except WebSocketDisconnect:
         print("Client disconnected")
@@ -388,11 +905,14 @@ async def parse_resume(file: UploadFile = File(...),user: dict = Depends(get_cur
                 "job_dict": job_dict,
                 "dynamic_keys": new_keys_tracker,
                 "count": 0,
+                "seen_jobs": [], # Clear old seen jobs
                 "ranked_jobs": [], # Clear old rankings
                 "updated_at": firestore.SERVER_TIMESTAMP,
             },
             merge=False, # ❌ CRITICAL: Overwrite previous data
         )
+        build_candidate_pool(user["uid"])
+        rerank_for_login(user["uid"])
         
         return {
             "success": True,
@@ -412,8 +932,7 @@ async def parse_resume(file: UploadFile = File(...),user: dict = Depends(get_cur
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
 
-        # Compute and store ranking
-        compute_and_store_ranking(user["uid"])
+        
     
 
 @app.get("/debug/ranked_jobs")
@@ -484,11 +1003,78 @@ async def save_match(match_data: dict, user: dict = Depends(get_current_user)):
             "matched_at": firestore.SERVER_TIMESTAMP,
             "status": "saved" 
         })
-        
+        ctx = get_job_context(
+            user["uid"],
+            job_id
+        )
+
+        if ctx:
+
+            features = build_features(
+                cosine_score=
+                    ctx["cosine"],
+
+                cross_score=
+                    ctx["cross"],
+
+                resume_embedding=
+                    ctx["resume_embedding"],
+
+                job_embedding=
+                    ctx["job_embedding"]
+            )
+
+            apply_feedback(
+                db=db,
+                uid=user["uid"],
+                features=features,
+                reward=1
+            )
+
+        print(f"Received feedback from user {user['uid']}: reward={1} ")
         return {"success": True}
     except Exception as e:
         print(f"Error saving match: {e}")
         raise HTTPException(status_code=500, detail="Failed to save match")
+    
+@app.post("/not-match")
+async def not_match(
+    data: dict,
+    user: dict = Depends(get_current_user)
+):
+
+    job_id = data["job_id"]
+
+    ctx = get_job_context(
+    user["uid"],
+    job_id
+)
+
+    if ctx:
+
+        features = build_features(
+            cosine_score=
+                ctx["cosine"],
+
+            cross_score=
+                ctx["cross"],
+
+            resume_embedding=
+                ctx["resume_embedding"],
+
+            job_embedding=
+                ctx["job_embedding"]
+        )
+
+        apply_feedback(
+            db=db,
+            uid=user["uid"],
+            features=features,
+            reward=-1
+        )
+        print(f"Received feedback from user {user['uid']}: reward={-1} ")
+
+    return {"success": True}
 
 @app.get("/matches")
 async def get_matches(user: dict = Depends(get_current_user)):
@@ -637,3 +1223,21 @@ async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
 
+
+
+@app.post("/feedback")
+async def feedback(
+    data: dict,
+    user: dict = Depends(get_current_user)
+):
+
+    apply_feedback(
+        db=db,
+        uid=user["uid"],
+        features=data["features"],
+        reward=data["reward"]
+    )
+    print(f"Received feedback from user {user['uid']}: reward={data['reward']} ")
+    return {
+        "success": True
+    }

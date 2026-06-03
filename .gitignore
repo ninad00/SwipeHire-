@@ -11,6 +11,7 @@ venv/
 pip-log.txt
 pip-delete-this-directory.txt
 backend/ppt-maker-7f813-firebase-adminsdk-fbsvc-facb0c310f.json
+backend/best_model.pt
 # IDE
 .idea/
 .vscode/
