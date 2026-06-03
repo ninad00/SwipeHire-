@@ -1,0 +1,4 @@
+serpapi
+firebase-admin
+google-genai
+python-dotenv

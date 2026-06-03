@@ -194,11 +194,30 @@ export default function MatchesPage() {
                       {(job.description || "").replace(/<[^>]*>/g, '').substring(0, 100)}...
                     </p>
 
-                    {/* View Details Button */}
-                    <Button className="w-full bg-primary hover:bg-primary/90 text-primary-foreground">
-                      <ExternalLink className="w-4 h-4 mr-2" />
-                      View Details
-                    </Button>
+                    {/* Action Buttons */}
+                    <div className="flex gap-2 mt-auto">
+                      <Button
+                        variant="outline"
+                        className="flex-1 border-primary/30 text-primary hover:bg-primary/10"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleJobClick(job);
+                        }}
+                      >
+                        <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
+                        Details
+                      </Button>
+                      <Button
+                        asChild
+                        className="flex-1 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white border-0 shadow-md transition-all duration-300 hover:scale-[1.02]"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Link href={`/applications/live?jobId=${job.id}`}>
+                          <Briefcase className="w-3.5 h-3.5 mr-1.5" />
+                          Auto Apply
+                        </Link>
+                      </Button>
+                    </div>
                   </motion.div>
                 ))}
               </AnimatePresence>

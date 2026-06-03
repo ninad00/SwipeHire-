@@ -59,6 +59,17 @@ const Navigation: React.FC = () => {
             </Link>
 
             <Link
+              href="/applications"
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${isActive("/applications")
+                ? "bg-primary/10 text-primary"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                }`}
+            >
+              <Briefcase className="w-4 h-4" />
+              <span className="hidden sm:inline">Applications</span>
+            </Link>
+
+            <Link
               href="/profile"
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${isActive("/profile")
                 ? "bg-primary/10 text-primary"

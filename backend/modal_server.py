@@ -7,6 +7,7 @@ from pdf2image import convert_from_path
 
 import modal
 from google import genai
+from google.genai import types
 from sklearn.metrics.pairwise import cosine_similarity
 from fastapi import Depends, FastAPI, Header, UploadFile, File, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
@@ -133,8 +134,9 @@ def create_embedding(text: str) -> np.ndarray:
     client = genai.Client(api_key=api_key)
     try:
         response = client.models.embed_content(
-            model="text-embedding-004",
-            contents=text
+            model="gemini-embedding-2",
+            contents=text,
+            config=types.EmbedContentConfig(output_dimensionality=768)
         )
         return np.array(response.embeddings[0].values).reshape(1, -1)
     except Exception as e:
