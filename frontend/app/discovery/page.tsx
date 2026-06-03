@@ -115,9 +115,9 @@ export default function DiscoveryPage() {
       setExitDirection(direction);
 
       if (direction === "right") {
-        // Save match
         try {
           const token = await getIdToken();
+
           await fetch(`${BACKEND_URL}/match`, {
             method: "POST",
             headers: {
@@ -126,16 +126,37 @@ export default function DiscoveryPage() {
             },
             body: JSON.stringify({
               job_id: currentJob.id,
-              score: currentJob.score || 0
+              score: currentJob.score || 0,
             }),
           });
+
           console.log("Match saved!");
         } catch (err) {
           console.error("Failed to save match:", err);
         }
 
-        // Store job for modal, will show AFTER animation
         setPendingModalJob(currentJob);
+      }
+
+      if (direction === "left") {
+        try {
+          const token = await getIdToken();
+
+          await fetch(`${BACKEND_URL}/not-match`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              job_id: currentJob.id,
+            }),
+          });
+
+          console.log("Skip recorded!");
+        } catch (err) {
+          console.error("Failed to record skip:", err);
+        }
       }
 
       // Wait for swipe animation to complete, then update
