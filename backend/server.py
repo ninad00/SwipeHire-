@@ -112,7 +112,7 @@ def parse_resume_with_llm(text_content: str) -> dict:
         prompt = f"{system_prompt}\n\nResume Text:\n{text_content}"
         
         response = client.models.generate_content(
-            model="gemini-3-flash-preview", 
+            model="gemma-4-31b-it", 
             contents=prompt,
         )
         
@@ -1188,7 +1188,7 @@ Provide a helpful, concise response:"""
             client = genai.Client()
             try:
                 response = client.models.generate_content_stream(
-                    model="gemini-3-flash-preview",
+                    model="gemma-4-31b-it",
                     contents=full_prompt,
                 )
                 
