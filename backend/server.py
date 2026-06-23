@@ -5,6 +5,7 @@ import tempfile
 import numpy as np
 import pytesseract
 from pdf2image import convert_from_path
+import traceback
 
 from google import genai
 from sklearn.metrics.pairwise import cosine_similarity
@@ -19,6 +20,7 @@ from firebase_admin import credentials, firestore, auth
 from google.api_core.exceptions import ResourceExhausted
 from bandit import apply_feedback, rerank_jobs, rerank_jobs,build_features
 from use_encoder import cross_encoder_rerank, cross_encoder_rerank, cross_encoder_rerank, load_cross_encoder
+import asyncio
 
 
 
@@ -692,6 +694,15 @@ async def save_profile(user: dict = Depends(get_current_user)):
 
         current_batch = unseen_jobs[:5]
 
+        print(
+        "ranked:",
+        len(ranked_jobs_data),
+        "seen:",
+        len(seen_jobs),
+        "unseen:",
+        len(unseen_jobs),
+    )
+
         jobs_to_send_details = []
         for item in current_batch:
             job_id = item["id"]
@@ -707,7 +718,12 @@ async def save_profile(user: dict = Depends(get_current_user)):
                 jobs_to_send_details.append(job_data)
             else:
                 print(f"DEBUG: Job ID {job_id} not found in 'resumes' collection.")
- 
+
+        print("ranked_jobs_data =", len(ranked_jobs_data))
+        print("seen_jobs =", len(seen_jobs))
+        print("unseen_jobs =", len(unseen_jobs))
+        print("current_batch =", len(current_batch))
+        print("sample ranked jobs:", ranked_jobs_data[:3])
         print(f"DEBUG: Successfully fetched {len(jobs_to_send_details)} job details.")
 
         if jobs_to_send_details:
@@ -733,6 +749,7 @@ async def save_profile(user: dict = Depends(get_current_user)):
         }
         
     except Exception as e:
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
    
 @app.websocket("/ws/jobs")

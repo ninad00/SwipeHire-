@@ -9,6 +9,7 @@ import numpy as np
 import pytesseract
 from pdf2image import convert_from_path
 import asyncio
+import traceback
 
 import modal
 from google import genai
@@ -26,9 +27,9 @@ from google.api_core.exceptions import ResourceExhausted
 from bandit import apply_feedback, rerank_jobs, build_features
 from use_encoder import cross_encoder_rerank, load_cross_encoder
 
-app = modal.App("tfj-backend")
+app = modal.App("swipehire-backend")
 
-volume = modal.Volume.from_name("tfj-data", create_if_missing=True)
+volume = modal.Volume.from_name("swipehire-data", create_if_missing=True)
 
 image = (
     modal.Image.debian_slim(python_version="3.11")
@@ -102,7 +103,7 @@ class RankedJob(BaseModel):
     description_snippet: str
     score: float
 
-# Symlink best_model.pt and firebase.json from the persistent tfj-data volume if present
+# Symlink best_model.pt and firebase.json from the persistent swipehire-data volume if present
 for filename in ["best_model.pt", "firebase.json"]:
     if os.path.exists(f"/data/{filename}") and not os.path.exists(filename):
         try:
@@ -112,7 +113,7 @@ for filename in ["best_model.pt", "firebase.json"]:
 
 cross_model, cross_tokenizer, cross_device = (
     load_cross_encoder(
-        "best_model.pt",
+        "/data/best_model.pt",
         "lora_adapter"
     )
 )
@@ -895,8 +896,9 @@ async def apply_ws(ws: WebSocket):
         
         env = os.environ.copy()
         
+        
         process = subprocess.Popen(
-            [python_exe, script_path, uid, job_id],
+            [python_exe,"-u", script_path, uid, job_id],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -1021,7 +1023,7 @@ async def get_live_screenshot(uid: str):
     image=image,
     volumes={VOLUME_PATH: volume},
     secrets=[modal.Secret.from_name("gemini-secret")],
-    timeout=300,
+    timeout=1800,
 )
 @modal.asgi_app()
 def fastapi_app():

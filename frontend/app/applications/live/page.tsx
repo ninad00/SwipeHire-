@@ -50,7 +50,7 @@ function LiveApplicationContent() {
     const { user, getIdToken } = useAuth();
 
     const jobId = searchParams.get("jobId");
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
+    const wsUrl = process.env.NEXT_PUBLIC_API_URL || "ws://localhost:8000";
     const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
     const [status, setStatus] = useState<AppStatus>("connecting");

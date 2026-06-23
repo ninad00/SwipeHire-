@@ -10,3 +10,5 @@ fastapi
 uvicorn[standard]
 python-multipart
 firebase-admin
+browser-use
+playwright

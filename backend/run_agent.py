@@ -9,6 +9,9 @@ from firebase_admin import credentials, firestore
 # Force output to use UTF-8 encoding
 sys.stdout.reconfigure(encoding='utf-8')
 
+VOLUME_PATH = "/data"
+FIREBASE_CRED_PATH = f"{VOLUME_PATH}/firebase-credentials.json"
+
 # Ensure event loop policy is set for subprocesses on Windows
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -23,7 +26,8 @@ async def main():
     
     # 1. Initialize Firebase
     try:
-        cred_path = os.path.join(os.path.dirname(__file__), "firebase.json")
+        # cred_path = os.path.join(os.path.dirname(__file__), "job-swipe-1a26b-firebase-adminsdk-fbsvc-1e4a97ee2b.json")
+        cred_path = FIREBASE_CRED_PATH
         if not firebase_admin._apps:
             cred = credentials.Certificate(cred_path)
             firebase_admin.initialize_app(cred)
@@ -81,7 +85,7 @@ async def main():
         profile_json_str = json.dumps(profile_context, indent=2)
         
         # Configure Gemini API Key
-        gemini_api_key = os.getenv("GEMINI_API_KEY")
+        gemini_api_key = "AIzaSyB2tg4ky3lWGkLE4RztJ7yy0h3xnV4ssU8"
         if not gemini_api_key:
             print(json.dumps({"type": "error", "message": "GEMINI_API_KEY is not configured on server"}))
             return
@@ -96,7 +100,7 @@ async def main():
         )
         
         # Start browser in headful mode (headless=False) for stable execution
-        browser = Browser(headless=False, disable_security=True, cross_origin_iframes=False)
+        browser = Browser(headless=True, disable_security=True, cross_origin_iframes=False)
         
         # Construct the task prompt
         task_prompt = f"""
