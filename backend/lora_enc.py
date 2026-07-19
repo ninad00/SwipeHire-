@@ -271,6 +271,7 @@ def train_on_modal() -> str:
 
     classifier = nn.Sequential(
     nn.Linear(1024,128),
+    nn.RELU(),
     nn.Dropout(0.2),
     nn.Linear(128, 1)
     )
